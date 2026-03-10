@@ -1,0 +1,1059 @@
+---
+title: "Movie Memory Experiment — Phase 1 Analysis"
+subtitle: "Data Loading · Cleaning · Descriptive Statistics · Exploratory Visualisations · Normality Testing"
+author: "The Outliers"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    theme: flatly
+    highlight: tango
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo      = TRUE,
+  warning   = FALSE,
+  message   = FALSE,
+  fig.align = "center",
+  fig.width = 8,
+  fig.height = 5
+)
+```
+
+```{r libraries}
+library(tidyverse)
+library(readxl)
+library(coin)
+library(rstatix)
+library(effectsize)
+library(ggpubr)
+library(scales)
+library(patchwork)
+
+for (.pkg in c("ggridges", "ggcorrplot", "ggrepel")) {
+  if (!requireNamespace(.pkg, quietly = TRUE)) install.packages(.pkg)
+}
+library(ggridges)
+library(ggcorrplot)
+library(ggrepel)
+
+library(knitr)
+library(kableExtra)
+```
+
+---
+
+# Introduction
+
+Episodic memory does not operate uniformly across continuous experience. Research in event
+cognition proposes that the mind segments an ongoing flow of activity into discrete
+**events** separated by **event boundaries** — moments when the prevailing situation model
+must be updated (Zacks et al., 2007). According to Event Segmentation Theory (EST), these
+boundaries arise when prediction errors in perceptual systems become large enough to
+require a new event representation. Crucially, items encountered *at or near* event
+boundaries are encoded more durably and later recognised with higher accuracy than items
+experienced in the *middle* of an event (Swallow et al., 2009; Ben-Yakov & Dudai, 2011).
+
+The boundary-memory advantage is well established for naturally structured events.
+A less-studied question is whether it extends to boundaries that are *artificially
+introduced* through film editing. Abrupt cuts between shots create strong perceptual
+discontinuities that may force a situation-model update even when there is no genuine
+narrative boundary — analogous to commercial breaks at non-boundaries impairing recall
+(Boltz, 1992). Conversely, if the cut removes the natural endpoint of a scene, it may
+*disrupt* encoding of immediately pre-boundary material.
+
+The present study addresses this directly. Two groups watched short film clips differing
+only in whether the clip ended with an **abrupt cut** (AB) 1–5 s before a consensus event
+boundary, or with a **natural transition** (NB) at the original endpoint. A subsequent
+recognition memory test probed two frame types: frames from just *before* a boundary
+(**BB**, Before-Boundary) and frames from the *middle* of an event (**EM**, Event-Middle).
+
+---
+
+# Methods
+
+## Participants
+
+A total of **184 participants** were recruited from IIIT Hyderabad and randomly assigned
+to one of two between-subjects conditions: Abrupt-cut (AB) or Natural-transition (NB). All
+participants reported normal or corrected-to-normal vision.
+
+The first 13 participants could not be included because of a data-collection error at the
+start of the project — their files were never saved — leaving **171 usable data files**.
+One file (sub42_NB) was excluded because the PsychoPy session returned no recognition
+trial rows, leaving **170 files** (AB *n* = 81, NB *n* = 89) for screening.
+
+Participants whose **encoding phase exceeded 27.05 minutes** were excluded as likely
+inattentive viewers. This threshold was derived from the 5.6-minute contribution of five
+repeated vigilance clips, plus an assumed 25-second skip latency per repetition. Four
+participants exceeded the threshold. No participant scored at or below chance on the
+recognition task. The final analysis sample was **N = 166 (AB *n* = 79, NB *n* = 87)**.
+
+## Stimuli and Design
+
+- **40 short video clips** were sourced from YouTube Shorts, each prepared in two
+  versions: Abrupt-cut (AB) and Natural-transition (NB).  
+  - **AB** clips were subtly cut 1–5 seconds *before* a consensus event boundary and
+    resumed at the onset of a new event context.  
+  - **NB** clips ended at their original, uninterrupted timelines. NB durations were
+    adjusted so that mean duration matched the AB clips.
+- Five clips were repeated as **vigilance checks**; participants pressed the spacebar to
+  skip these repeated videos (see `abruptmovies.csv` / `naturalmovies.csv`).
+- For each clip, two still frames were extracted as recognition targets:
+  - **BB** — frame from just *before* a consensus event boundary.
+  - **EM** — frame from the *middle* of an event (positioned between two boundaries).
+- Each target was paired with a visually similar, previously unseen **lure**, yielding
+  **40 two-alternative forced-choice (2-AFC) trials** per participant. Lure similarity was
+  manipulated across three levels (easy, moderate, difficult).
+
+## Procedure
+
+1. Participants passively watched their assigned clips during the encoding phase.
+2. At test, each target was shown alongside its lure; participants indicated which image
+   they had seen before.
+3. Participants then gave a **confidence rating (1–5)**: 1 = not at all confident,
+   5 = very confident.
+4. Trial order was randomised. The experiment ran in PsychoPy.
+
+## Research Questions and Predictions
+
+| # | Research Question | Prediction |
+|---|---|---|
+| **RQ1** | Does viewing condition affect overall recognition accuracy and RT? | NB > AB accuracy; NB faster RT |
+| **RQ2** | Does condition affect BB frame recognition? | BB accuracy NB > AB — abrupt cut falls close to BB, disrupting pre-boundary encoding |
+| **RQ3** | Does condition affect EM frame recognition? | EM accuracy NB ≈ AB — EM is far from the cut point, less sensitive to manipulation |
+
+## Key Statistical Metrics
+
+- **Recognition Memory Index (REC):** Bias-corrected discrimination index.  
+  $\text{REC} = P(\text{"old"} \mid \text{Target}) - P(\text{"old"} \mid \text{Lure})$  
+  REC = 0 → chance; REC = 1 → perfect discrimination.
+
+- **Lure Discrimination Index (LDI):** Sensitivity to lure novelty.  
+  $\text{LDI} = P(\text{"new"} \mid \text{Lure})$
+
+## Analysis Approach
+
+All analyses use R. The decision between parametric and non-parametric tests is guided by
+Shapiro-Wilk normality tests on per-subject accuracy within each condition (α = .05).
+
+---
+
+# Data Loading
+
+## File paths
+
+```{r paths}
+data_root  <- "BRSM data csv"
+sub_folder <- file.path(data_root, "BRSM data csv")
+
+path_targets <- file.path(data_root, "target_and_lures.csv")
+path_demog   <- file.path(data_root, "Demographic data.xlsx")
+```
+
+## Reference tables
+
+```{r load-reference}
+target_lures <- read_csv(path_targets, show_col_types = FALSE) %>%
+  mutate(target_type = str_extract(target_img, "(?<=_)(EM|BB)(?=_T)"))
+
+demog_raw <- read_excel(path_demog) %>%
+  rename(sub_id_full = `Sub ID`) %>%
+  mutate(sub_id_full = tolower(sub_id_full))
+
+cat("Target/lure rows:", nrow(target_lures), "\n")
+cat("Target types:\n")
+print(table(target_lures$target_type))
+```
+
+## Subject CSVs
+
+```{r load-subjects}
+csv_files <- list.files(sub_folder, pattern = "\\.csv$", full.names = TRUE)
+cat("CSV files found:", length(csv_files), "\n")
+
+read_subject <- function(filepath) {
+  fname     <- basename(filepath)
+  sub_id    <- tolower(str_extract(fname, "^[Ss]ub\\d+"))
+  condition <- str_extract(fname, "(?<=_)(AB|NB)(?=\\s?_)")
+
+  df <- read_csv(filepath, show_col_types = FALSE,
+                 col_types = cols(.default = "c"))
+
+  if (!"movie_id" %in% names(df)) {
+    warning(paste("Skipping", fname, "— no movie_id column"))
+    return(NULL)
+  }
+
+  enc_start    <- suppressWarnings(
+    as.numeric(df$instruction_2.stopped[!is.na(df$instruction_2.stopped)][1]))
+  enc_end      <- suppressWarnings(
+    as.numeric(df$Videos.stopped[!is.na(df$Videos.stopped)][1]))
+  encoding_dur <- if (!is.na(enc_start) && !is.na(enc_end)) enc_end - enc_start else NA_real_
+
+  df <- df %>% filter(!is.na(movie_id), movie_id != "")
+
+  optional_cols <- list(
+    is_repeat     = NA_integer_,  duration      = NA_real_,
+    target_img    = NA_character_, lure_img     = NA_character_,
+    confidence_rt = NA_real_
+  )
+  for (col in names(optional_cols))
+    if (!col %in% names(df)) df[[col]] <- optional_cols[[col]]
+
+  df %>%
+    mutate(
+      sub_id        = sub_id,
+      condition     = condition,
+      movie_id      = as.integer(movie_id),
+      resp.corr     = as.numeric(resp.corr),
+      resp.rt       = as.numeric(gsub("^\\[|\\]$", "", resp.rt)),
+      confidence    = as.numeric(confidence),
+      confidence_rt = as.numeric(confidence_rt),
+      is_repeat     = as.integer(is_repeat),
+      duration      = as.numeric(duration),
+      encoding_dur  = encoding_dur
+    ) %>%
+    select(any_of(c("sub_id", "condition", "movie_id", "is_repeat", "duration",
+                    "target_img", "lure_img",
+                    "resp.keys", "resp.corr", "resp.rt",
+                    "confidence", "confidence_rt", "encoding_dur")))
+}
+
+raw_data <- map_dfr(csv_files, read_subject)
+
+cat("\nTotal trial rows loaded:", nrow(raw_data), "\n")
+cat("Unique subjects loaded :", n_distinct(raw_data$sub_id), "\n\n")
+cat("Condition breakdown:\n")
+print(table(raw_data$condition))
+```
+
+## Join target type and demographics
+
+```{r join-tables}
+df <- raw_data %>%
+  left_join(target_lures %>% select(movie_id, target_type), by = "movie_id")
+
+demog <- demog_raw %>%
+  mutate(sub_id = str_extract(sub_id_full, "^sub\\d+")) %>%
+  select(sub_id, Age, Gender, Handedness, Vision)
+
+df <- df %>% left_join(demog, by = "sub_id")
+cat("Rows after join:", nrow(df), "\n")
+```
+
+---
+
+# Data Cleaning and Quality Checks
+
+## Trial count per subject
+
+```{r trial-counts}
+trial_counts <- df %>%
+  group_by(sub_id, condition) %>%
+  summarise(n_trials = n(), .groups = "drop")
+
+cat("Expected trials per subject: 40\n")
+cat("Subjects with ≠ 40 trials:\n")
+trial_counts %>% filter(n_trials != 40) %>% print()
+cat("\nTrial count distribution:\n")
+print(table(trial_counts$n_trials))
+```
+
+## Missing values in key columns
+
+```{r missing-values}
+key_cols <- c("resp.corr", "resp.rt", "confidence", "confidence_rt", "target_type")
+
+df %>%
+  summarise(across(all_of(key_cols), ~ sum(is.na(.)), .names = "NA_{.col}")) %>%
+  kbl(caption = "Missing-value counts in key analysis columns") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+## Reaction time sanity check
+
+```{r rt-check}
+# Encoding-phase rows have no RT by design (resp.rt is NA); these are excluded from RT analyses.
+rt_flags <- df %>% filter(is.na(resp.rt))
+cat("Encoding-phase rows (no RT recorded):", nrow(rt_flags), "\n")
+
+df %>%
+  filter(!is.na(resp.rt)) %>%
+  summarise(
+    min_rt    = min(resp.rt),
+    p5_rt     = quantile(resp.rt, 0.05),
+    median_rt = median(resp.rt),
+    p95_rt    = quantile(resp.rt, 0.95),
+    max_rt    = max(resp.rt)
+  ) %>%
+  kbl(caption = "RT summary across all valid trials (seconds)", digits = 3) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+## Participant-level vigilance screening
+
+```{r subject-accuracy}
+VIGILANCE_THRESHOLD_S <- 27.05 * 60  # 1623 seconds
+
+sub_accuracy <- df %>%
+  group_by(sub_id, condition) %>%
+  summarise(
+    n_trials     = n(),
+    mean_acc     = mean(resp.corr, na.rm = TRUE),
+    encoding_dur = first(encoding_dur),
+    .groups      = "drop"
+  ) %>%
+  mutate(
+    REC            = 2 * mean_acc - 1,
+    vigilance_fail = !is.na(encoding_dur) & encoding_dur > VIGILANCE_THRESHOLD_S
+  )
+
+vigilance_excluded <- sub_accuracy %>% filter(vigilance_fail)
+cat("Subjects excluded for exceeding the vigilance threshold (> 27.05 min):",
+    nrow(vigilance_excluded), "\n\n")
+
+vigilance_excluded %>%
+  select(sub_id, condition, encoding_dur) %>%
+  mutate(encoding_min = round(encoding_dur / 60, 2)) %>%
+  kbl(caption = "Vigilance-excluded participants",
+      col.names = c("Subject", "Condition", "Encoding (s)", "Encoding (min)")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+
+```
+
+## Participant exclusion funnel
+
+```{r exclusion-table}
+tribble(
+  ~Stage,                       ~Change,  ~N,
+  "Recruited (total)",          "",       "184",
+  "Data error (first 13)",      "−13",    "",
+  "Files available",            "",       "171",
+  "Corrupt file (sub42_NB)",    "−1",     "170",
+  "Vigilance fails",            "−4",     "166",
+  "**Final sample**",           "",       "**166**",
+  "  AB condition",             "",       "79",
+  "  NB condition",             "",       "87"
+) %>%
+  kbl(caption = "Participant exclusion funnel",
+      align = c("l", "c", "c")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE) %>%
+  row_spec(6, bold = TRUE)
+```
+
+**Vigilance exclusion details:**  
+Threshold = 27.05 min (5.6 min repeated videos + 25 s assumed skip latency × 5).  
+Failed participants: sub32-AB (27.3 min), sub36-AB (27.8 min), sub151-NB (27.2 min),
+sub161-NB (28.0 min).  
+Median encoding time across all retained participants: **25.58 min**.
+
+## Final cleaned data frame
+
+```{r build-clean}
+excluded_subs <- vigilance_excluded$sub_id
+
+df_clean <- df %>%
+  filter(
+    !is.na(resp.rt),
+    !is.na(resp.corr),
+    !(sub_id %in% excluded_subs)
+  )
+
+cat("Total trials after cleaning :", nrow(df_clean), "\n")
+cat("Total subjects after cleaning:", n_distinct(df_clean$sub_id), "\n\n")
+
+df_clean %>%
+  group_by(condition) %>%
+  summarise(Subjects = n_distinct(sub_id), Trials = n(), .groups = "drop") %>%
+  kbl(caption = "Cleaned data: subjects and trials by condition",
+      col.names = c("Condition", "Subjects", "Trials")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+---
+
+# Descriptive Statistics
+
+```{r sub-level-data}
+# Subject-level summary — used in all plots and group-level tables below
+sub_level <- df_clean %>%
+  group_by(sub_id, condition) %>%
+  summarise(
+    mean_acc  = mean(resp.corr,  na.rm = TRUE),
+    mean_rt   = mean(resp.rt,    na.rm = TRUE),
+    mean_conf = mean(confidence, na.rm = TRUE),
+    .groups   = "drop"
+  )
+
+# Retained participant demographics — derived from df_clean (post-exclusion only)
+retained_subs <- df_clean %>%
+  distinct(sub_id, condition, Age, Gender, Handedness, Vision)
+
+# Sanity check: must equal final sample size
+stopifnot(nrow(retained_subs) == 166)
+cat(sprintf("Demographic rows: %d (matches final retained sample — demographics are post-exclusion only)\n",
+            nrow(retained_subs)))
+
+# Consistent colour palette
+cols <- c(AB = "#E07B54", NB = "#5B8DB8")
+```
+
+## Demographics
+
+```{r demog-summary}
+# Age by condition
+retained_subs %>%
+  group_by(condition) %>%
+  summarise(
+    n        = n(),
+    Mean_Age = round(mean(Age, na.rm = TRUE), 1),
+    SD       = round(sd(Age,  na.rm = TRUE), 1),
+    Min      = min(Age, na.rm = TRUE),
+    Max      = max(Age, na.rm = TRUE),
+    .groups  = "drop"
+  ) %>%
+  kbl(caption = "Age summary by condition") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+
+# Gender (including NA count for transparency)
+n_gender_na <- sum(is.na(retained_subs$Gender))
+cat(sprintf("Participants with missing gender: %d (excluded from chi-square test)\n", n_gender_na))
+
+retained_subs %>%
+  mutate(Gender = ifelse(is.na(Gender), "(not reported)", Gender)) %>%
+  count(condition, Gender) %>%
+  pivot_wider(names_from = Gender, values_from = n, values_fill = 0) %>%
+  kbl(caption = "Gender breakdown by condition (including not-reported)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+## Demographic Balance Checks
+
+Before testing the main memory hypotheses, we verify that the AB and NB groups are
+comparable on age and gender. These checks serve a **quality-control** function: if the
+groups are balanced, any subsequent differences in recognition memory can be attributed
+to the experimental manipulation rather than pre-existing participant characteristics.
+Handedness and vision are reported descriptively but not formally tested, as they show
+little variation in student convenience samples and have no theoretical relevance to
+recognition memory.
+
+### Age balance: Mann–Whitney *U* test
+
+Age is a continuous variable that could potentially influence memory performance.
+A Mann–Whitney *U* test is used (rather than an independent-samples *t*-test) because it
+does not assume normality and is consistent with the non-parametric approach adopted
+throughout this study. A non-significant result (p > .05) confirms that age is balanced
+across conditions.
+
+```{r demog-age-balance}
+age_AB <- retained_subs %>% filter(condition == "AB") %>% pull(Age)
+age_NB <- retained_subs %>% filter(condition == "NB") %>% pull(Age)
+
+wt_age <- wilcox.test(age_AB, age_NB, exact = FALSE)
+
+cat("Mann-Whitney U test — Age (AB vs NB)\n")
+cat(sprintf("W = %.1f,  p = %.4f\n\n", wt_age$statistic, wt_age$p.value))
+
+if (wt_age$p.value > .05) {
+  cat("Interpretation: Groups do NOT differ significantly in age (p > .05).\n")
+  cat("Age is balanced across conditions — unlikely to confound memory comparisons.\n")
+} else {
+  cat("WARNING: Groups differ significantly in age (p <= .05).\n")
+  cat("Age may be a potential confound and should be considered in the main analyses.\n")
+}
+```
+
+### Gender balance: Chi-square test of independence
+
+Gender is categorical. A Chi-square test of independence tests whether the proportion
+of male/female participants differs across conditions. A non-significant result confirms
+that gender composition is balanced.
+
+```{r demog-gender-balance}
+# Exclude participants with missing gender before chi-square
+# (NAs are not a gender category and would distort the test)
+retained_gender <- retained_subs %>% filter(!is.na(Gender))
+
+n_excluded_gender <- nrow(retained_subs) - nrow(retained_gender)
+cat(sprintf("Participants excluded (gender not reported): %d\n", n_excluded_gender))
+cat(sprintf("Participants included in chi-square: %d\n\n", nrow(retained_gender)))
+
+gender_table <- table(retained_gender$condition, retained_gender$Gender)
+
+cat("Contingency table (Condition × Gender, NA removed):\n")
+print(gender_table)
+
+chi_gender <- chisq.test(gender_table)
+
+cat(sprintf("\nChi-square test: χ²(%d) = %.3f,  p = %.4f\n",
+            chi_gender$parameter, chi_gender$statistic, chi_gender$p.value))
+
+if (chi_gender$p.value > .05) {
+  cat("Interpretation: Gender distribution does NOT differ across conditions (p > .05).\n")
+  cat("Gender is balanced — groups are comparable in gender composition.\n")
+} else {
+  cat("WARNING: Gender distribution differs significantly across conditions (p <= .05).\n")
+}
+```
+
+### Balance check summary
+
+```{r demog-balance-summary}
+tribble(
+  ~Variable,  ~Test,                     ~Statistic,                        ~p_value,           ~Balanced,
+  "Age",      "Mann-Whitney U",          round(wt_age$statistic, 1),        round(wt_age$p.value, 4),   ifelse(wt_age$p.value > .05, "Yes", "No"),
+  "Gender",   "Chi-square",              round(chi_gender$statistic, 3),    round(chi_gender$p.value, 4), ifelse(chi_gender$p.value > .05, "Yes", "No")
+) %>%
+  kbl(caption = "Demographic balance between AB and NB conditions",
+      col.names = c("Variable", "Test", "Statistic", "p-value", "Balanced?")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE) %>%
+  column_spec(5, bold = TRUE,
+              color = ifelse(c(wt_age$p.value > .05, chi_gender$p.value > .05), "green", "red"))
+```
+
+## Recognition accuracy by condition
+
+```{r acc-by-condition}
+acc_condition <- df_clean %>%
+  group_by(sub_id, condition) %>%
+  summarise(mean_acc = mean(resp.corr, na.rm = TRUE), .groups = "drop") %>%
+  group_by(condition) %>%
+  summarise(
+    n      = n(),
+    Mean   = round(mean(mean_acc), 3),
+    SD     = round(sd(mean_acc),   3),
+    SE     = round(sd(mean_acc) / sqrt(n()), 3),
+    Median = round(median(mean_acc), 3),
+    .groups = "drop"
+  )
+
+acc_condition %>%
+  kbl(caption = "Recognition accuracy by condition",
+      col.names = c("Condition", "N", "Mean", "SD", "SE", "Median")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+AB = **83.8%**, NB = **87.0%** — a 3.2 percentage-point advantage for the
+natural-transition condition.
+
+## Recognition accuracy by condition × target type
+
+```{r acc-by-target-type}
+acc_target <- df_clean %>%
+  group_by(sub_id, condition, target_type) %>%
+  summarise(mean_acc = mean(resp.corr, na.rm = TRUE), .groups = "drop") %>%
+  group_by(condition, target_type) %>%
+  summarise(
+    n    = n(),
+    Mean = round(mean(mean_acc), 3),
+    SD   = round(sd(mean_acc),   3),
+    SE   = round(sd(mean_acc) / sqrt(n()), 3),
+    .groups = "drop"
+  )
+
+acc_target %>%
+  kbl(caption = "Recognition accuracy by condition and target type",
+      col.names = c("Condition", "Target type", "N", "Mean", "SD", "SE")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+- NB > AB for **BB** frames: 85.8% vs 82.2% (gap = 3.6 pp) — consistent with RQ2.
+- NB ≈ AB for **EM** frames: 88.3% vs 85.4% (gap = 2.9 pp) — consistent with RQ3 null.
+- EM > BB within both conditions (EM targets are farther from the cut, easier to encode).
+
+## Recognition Memory Index (REC) by condition
+
+```{r rec-index}
+# REC = P("old"|Target) - P("old"|Lure)
+# Since the 2-AFC response is coded as correct/incorrect for the target,
+# P("old"|Lure) = 1 - mean_acc
+rec_summary <- df_clean %>%
+  group_by(sub_id, condition) %>%
+  summarise(
+    p_old_target = mean(resp.corr, na.rm = TRUE),
+    p_old_lure   = 1 - mean(resp.corr, na.rm = TRUE),
+    REC          = p_old_target - p_old_lure,
+    .groups      = "drop"
+  ) %>%
+  group_by(condition) %>%
+  summarise(
+    n        = n(),
+    Mean_REC = round(mean(REC), 3),
+    SD_REC   = round(sd(REC),   3),
+    SE_REC   = round(sd(REC) / sqrt(n()), 3),
+    .groups  = "drop"
+  )
+
+rec_summary %>%
+  kbl(caption = "Recognition Memory Index (REC = 2*Acc - 1) by condition",
+      col.names = c("Condition", "N", "Mean REC", "SD", "SE")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+## Lure Discrimination Index (LDI) by condition
+
+The **general LDI formula** from the Mnemonic Similarity Task (MST) literature
+(Bakker et al., 2008) is:
+
+$$\text{LDI} = P(\text{"similar"} \mid \text{Lure}) - P(\text{"similar"} \mid \text{Foil})$$
+
+This requires **three item types** (targets, lures, foils) and a **three-option
+response** ("old" / "similar" / "new") so the foil term can correct for response
+bias.
+
+**Why we use a different formula here:** This experiment used a **2-AFC design**
+— each trial presented one target and one lure side-by-side and the participant
+made a binary forced choice. There are no foil items and no "similar" response
+category, so the MST formula cannot be applied. Instead:
+
+$$\text{LDI} = P(\text{"new"} \mid \text{Lure}) = P(\text{correct})$$
+
+In a 2-AFC, choosing the target *is* rejecting the lure, so LDI is numerically
+identical to mean accuracy. It is computed and reported here for terminological
+consistency with the pattern separation literature, but **provides no additional
+information beyond the accuracy analysis**.
+
+```{r ldi-index}
+# LDI = P("new" | Lure) = probability of correctly rejecting a lure
+# In 2-AFC: a "correct" response (resp.corr = 1) means the participant
+# chose the target, i.e., they correctly called the lure "new".
+# So LDI per trial = resp.corr  (same column, different interpretation).
+# Subject-level LDI = mean(resp.corr) across all trials = mean accuracy.
+# We compute it explicitly here for clarity and report it separately.
+# NOTE: The standard MST formula (P("similar"|Lure) - P("similar"|Foil))
+# cannot be applied here due to the 2-AFC design (no foils, no "similar" option).
+
+ldi_summary <- df_clean %>%
+  group_by(sub_id, condition) %>%
+  summarise(
+    LDI = mean(resp.corr, na.rm = TRUE),   # P("new" | Lure) = P(correct)
+    .groups = "drop"
+  ) %>%
+  group_by(condition) %>%
+  summarise(
+    n        = n(),
+    Mean_LDI = round(mean(LDI), 3),
+    SD_LDI   = round(sd(LDI),   3),
+    SE_LDI   = round(sd(LDI) / sqrt(n()), 3),
+    Min_LDI  = round(min(LDI), 3),
+    Max_LDI  = round(max(LDI), 3),
+    .groups  = "drop"
+  )
+
+ldi_summary %>%
+  kbl(caption = "Lure Discrimination Index (LDI = P('new' | Lure)) by condition",
+      col.names = c("Condition", "N", "Mean LDI", "SD", "SE", "Min", "Max")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+
+cat("\nInterpretation:\n")
+cat(sprintf("AB: Mean LDI = %.3f (SD = %.3f)\n",
+            ldi_summary$Mean_LDI[ldi_summary$condition == "AB"],
+            ldi_summary$SD_LDI[ldi_summary$condition == "AB"]))
+cat(sprintf("NB: Mean LDI = %.3f (SD = %.3f)\n",
+            ldi_summary$Mean_LDI[ldi_summary$condition == "NB"],
+            ldi_summary$SD_LDI[ldi_summary$condition == "NB"]))
+cat("LDI > 0.5 indicates above-chance lure rejection in both conditions.\n")
+```
+
+## Reaction time by condition
+
+```{r rt-by-condition}
+# resp.rt is measured from recognition trial onset (routine start),
+# so it includes image display time + decision latency + keypress.
+# This gives values in the ~5-6 second range across participants.
+df_clean %>%
+  group_by(sub_id, condition) %>%
+  summarise(mean_rt = mean(resp.rt, na.rm = TRUE), .groups = "drop") %>%
+  group_by(condition) %>%
+  summarise(
+    n      = n(),
+    Mean   = round(mean(mean_rt), 3),
+    SD     = round(sd(mean_rt),   3),
+    SE     = round(sd(mean_rt) / sqrt(n()), 3),
+    Median = round(median(mean_rt), 3),
+    .groups = "drop"
+  ) %>%
+  kbl(caption = "Mean reaction time (seconds) by condition",
+      col.names = c("Condition", "N", "Mean RT (s)", "SD", "SE", "Median RT (s)")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+## Confidence rating by condition
+
+```{r conf-by-condition}
+df_clean %>%
+  group_by(sub_id, condition) %>%
+  summarise(mean_conf = mean(confidence, na.rm = TRUE), .groups = "drop") %>%
+  group_by(condition) %>%
+  summarise(
+    n    = n(),
+    Mean = round(mean(mean_conf), 3),
+    SD   = round(sd(mean_conf),   3),
+    SE   = round(sd(mean_conf) / sqrt(n()), 3),
+    .groups = "drop"
+  ) %>%
+  kbl(caption = "Mean confidence rating (1 = guess, 5 = certain) by condition",
+      col.names = c("Condition", "N", "Mean Confidence", "SD", "SE")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+---
+
+# Exploratory Visualisations
+
+## Accuracy distribution by condition (histogram)
+
+```{r histogram-acc, fig.width=7, fig.height=4.5}
+ggplot(sub_level, aes(x = mean_acc, fill = condition)) +
+  geom_histogram(
+    binwidth = 0.05,
+    colour   = "white",
+    alpha    = 0.8,
+    position = "identity"
+  ) +
+  geom_vline(xintercept = 0.50, linetype = "dashed",
+             colour = "red", linewidth = 0.8) +
+  scale_fill_manual(values = cols) +
+  scale_x_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    title    = "Distribution of per-subject recognition accuracy",
+    subtitle = "Dashed line = chance (50%).  NB distribution is visibly right-shifted.",
+    x        = "Mean accuracy (proportion correct)",
+    y        = "Number of participants",
+    fill     = "Condition"
+  ) +
+  theme_minimal(base_size = 13)
+```
+
+All participants scored well above chance. The NB distribution is shifted rightward
+relative to AB. There are no floor effects; a small ceiling cluster is visible in both
+conditions.
+
+## Accuracy by condition × target type (grouped bar chart)
+
+```{r bar-2x2, fig.width=7, fig.height=4.5}
+acc_summary_2x2 <- df_clean %>%
+  group_by(sub_id, condition, target_type) %>%
+  summarise(mean_acc = mean(resp.corr, na.rm = TRUE), .groups = "drop") %>%
+  group_by(condition, target_type) %>%
+  summarise(
+    M  = mean(mean_acc, na.rm = TRUE),
+    SE = sd(mean_acc,   na.rm = TRUE) / sqrt(n()),
+    .groups = "drop"
+  ) %>%
+  mutate(target_type = factor(target_type, levels = c("EM", "BB")))
+
+ggplot(acc_summary_2x2,
+       aes(x = condition, y = M, fill = target_type)) +
+  geom_bar(stat = "identity",
+           position = position_dodge(width = 0.7),
+           width = 0.6, alpha = 0.9) +
+  geom_errorbar(
+    aes(ymin = M - SE, ymax = M + SE),
+    position  = position_dodge(width = 0.7),
+    width     = 0.2,
+    linewidth = 0.7
+  ) +
+  scale_fill_manual(
+    values = c(EM = "#4C9900", BB = "#993399"),
+    labels = c(EM = "Event Middle (EM)", BB = "Before Boundary (BB)")
+  ) +
+  scale_y_continuous(limits = c(0, 1), labels = percent_format()) +
+  labs(
+    title    = "Recognition accuracy by condition and target type",
+    subtitle = "Error bars = ±1 SE across participants",
+    x        = "Condition",
+    y        = "Mean accuracy",
+    fill     = "Target type"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "top")
+```
+
+- **NB > AB for BB** (3.6 pp): the abrupt cut falls near BB frames, consistent with
+  disrupted encoding of pre-boundary material (RQ2).  
+- **NB ≈ AB for EM** (2.9 pp): event-middle frames are insensitive to the editing
+  manipulation, as predicted by RQ3.
+
+## Descriptive boxplots: accuracy, RT, and confidence
+
+```{r descriptive-boxplots, fig.width=12, fig.height=5}
+p_acc <- ggplot(sub_level, aes(x = condition, y = mean_acc, fill = condition)) +
+  geom_boxplot(width = 0.5, outlier.shape = 21, alpha = 0.8) +
+  geom_jitter(width = 0.12, size = 1.2, alpha = 0.4) +
+  geom_hline(yintercept = 0.5, linetype = "dashed", colour = "red") +
+  scale_fill_manual(values = cols) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(title = "Recognition Accuracy", x = "Condition", y = "Mean Accuracy") +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none")
+
+p_rt <- ggplot(sub_level, aes(x = condition, y = mean_rt, fill = condition)) +
+  geom_boxplot(width = 0.5, outlier.shape = 21, alpha = 0.8) +
+  geom_jitter(width = 0.12, size = 1.2, alpha = 0.4) +
+  scale_fill_manual(values = cols) +
+  labs(title = "Reaction Time", x = "Condition", y = "Mean RT (s)") +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none")
+
+p_conf <- ggplot(sub_level, aes(x = condition, y = mean_conf, fill = condition)) +
+  geom_boxplot(width = 0.5, outlier.shape = 21, alpha = 0.8) +
+  geom_jitter(width = 0.12, size = 1.2, alpha = 0.4) +
+  scale_fill_manual(values = cols) +
+  scale_y_continuous(limits = c(1, 5), breaks = 1:5) +
+  labs(title = "Confidence Rating", x = "Condition",
+       y = "Mean Confidence (1–5)") +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none")
+
+(p_acc | p_rt | p_conf) +
+  plot_annotation(
+    title    = "Per-subject means by condition",
+    subtitle = "Boxes show IQR; jitter = individual participants; red dashed = chance"
+  )
+```
+
+---
+
+# Extended Visualisations
+
+## Demographics: age distribution and gender breakdown
+
+```{r demog-age-gender, fig.width=12, fig.height=5}
+p_age <- ggplot(retained_subs,
+                aes(x = condition, y = Age, fill = condition)) +
+  geom_violin(alpha = 0.35, trim = TRUE, linewidth = 0.7) +
+  geom_boxplot(width = 0.18, alpha = 0.85, outlier.shape = NA) +
+  geom_jitter(width = 0.10, size = 1.8, alpha = 0.45) +
+  scale_fill_manual(values = cols) +
+  labs(
+    title    = "Age distribution by condition",
+    subtitle = "Violin = density;  box = IQR;  points = individual participants",
+    x = "Condition", y = "Age (years)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none")
+
+p_gender <- retained_subs %>%
+  count(condition, Gender) %>%
+  ggplot(aes(x = condition, y = n, fill = Gender)) +
+  geom_bar(stat = "identity",
+           position = position_dodge(0.7),
+           width = 0.6, alpha = 0.9) +
+  geom_text(aes(label = n),
+            position = position_dodge(0.7),
+            vjust = -0.5, size = 3.5, fontface = "bold") +
+  scale_fill_brewer(palette = "Set2") +
+  labs(title = "Gender breakdown by condition",
+       x = "Condition", y = "Count", fill = "Gender") +
+  theme_minimal(base_size = 13)
+
+p_age | p_gender
+```
+
+## Reaction time ridgeline: condition × target type
+
+```{r rt-ridgeline, fig.width=9, fig.height=5}
+df_clean %>%
+  filter(!is.na(resp.rt)) %>%
+  mutate(Group = factor(paste0(condition, "\u2013", target_type),
+                        levels = c("AB\u2013EM", "AB\u2013BB",
+                                   "NB\u2013EM", "NB\u2013BB"))) %>%
+  ggplot(aes(x = resp.rt, y = Group, fill = condition)) +
+  geom_density_ridges(alpha = 0.55, scale = 1.0,
+                      bandwidth = 0.25, rel_min_height = 0.01) +
+  scale_fill_manual(values = cols) +
+  coord_cartesian(xlim = c(0, 8)) +
+  labs(
+    title    = "RT distributions by condition and target type",
+    subtitle = "Narrower, leftward peaks indicate faster and more consistent responding",
+    x = "Reaction time (s)", y = NULL, fill = "Condition"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "top")
+```
+
+## Confidence–accuracy calibration curve
+
+```{r conf-calibration, fig.width=8, fig.height=5}
+calib_data <- df_clean %>%
+  filter(!is.na(confidence), !is.na(resp.corr)) %>%
+  group_by(condition, confidence) %>%
+  summarise(
+    mean_acc = mean(resp.corr, na.rm = TRUE),
+    n_trials = n(),
+    .groups  = "drop"
+  )
+
+ggplot(calib_data,
+       aes(x = confidence, y = mean_acc,
+           colour = condition, size = n_trials)) +
+  geom_line(aes(group = condition), linewidth = 1, show.legend = FALSE) +
+  geom_point(alpha = 0.9) +
+  geom_hline(yintercept = 0.5, linetype = "dashed", colour = "red") +
+  scale_colour_manual(values = cols) +
+  scale_size_continuous(range = c(3, 9), name = "# trials") +
+  scale_y_continuous(limits = c(0.5, 1), labels = percent_format()) +
+  scale_x_continuous(breaks = 1:5) +
+  labs(
+    title    = "Confidence\u2013accuracy calibration curve",
+    subtitle = "A monotonic rise indicates participants accurately judge their own memory",
+    x = "Confidence rating (1 = guess, 5 = certain)",
+    y = "Mean recognition accuracy",
+    colour = "Condition"
+  ) +
+  theme_minimal(base_size = 13)
+```
+
+## Cross-variable Pearson correlation matrix
+
+```{r correlation-matrix, fig.width=8, fig.height=7}
+cor_vars <- df_clean %>%
+  group_by(sub_id, condition) %>%
+  summarise(
+    Accuracy   = mean(resp.corr,  na.rm = TRUE),
+    RT         = mean(resp.rt,    na.rm = TRUE),
+    Confidence = mean(confidence, na.rm = TRUE),
+    Enc_min    = first(encoding_dur) / 60,
+    .groups    = "drop"
+  ) %>%
+  left_join(demog %>% select(sub_id, Age), by = "sub_id") %>%
+  select(Accuracy, RT, Confidence, Enc_min, Age) %>%
+  filter(complete.cases(.))
+
+cor_mat <- cor(cor_vars, use = "pairwise.complete.obs")
+
+ggcorrplot(
+  cor_mat,
+  method       = "square",
+  type         = "lower",
+  lab          = TRUE,
+  lab_size     = 4.5,
+  colors       = c("#CC3333", "white", "#4C9900"),
+  outline.col  = "white",
+  title        = "Pearson correlation matrix — subject-level variables",
+  ggtheme      = theme_minimal(base_size = 12),
+  legend.title = "Pearson r"
+)
+```
+
+---
+
+# Normality Testing
+
+Before selecting inferential tests we assess whether per-subject recognition accuracy
+is normally distributed within each condition. Because accuracy is bounded in [0, 1]
+and is commonly ceiling-skewed in memory paradigms, normality cannot be assumed a priori.
+
+## Shapiro-Wilk test
+
+```{r normality-shapiro}
+acc_AB <- sub_level %>% filter(condition == "AB") %>% pull(mean_acc)
+acc_NB <- sub_level %>% filter(condition == "NB") %>% pull(mean_acc)
+
+sw_AB <- shapiro.test(acc_AB)
+sw_NB <- shapiro.test(acc_NB)
+
+cat("Shapiro-Wilk Normality Test\n")
+cat(sprintf("AB: W = %.4f,  p = %.4f\n", sw_AB$statistic, sw_AB$p.value))
+cat(sprintf("NB: W = %.4f,  p = %.4f\n\n", sw_NB$statistic, sw_NB$p.value))
+
+tribble(
+  ~Group, ~W,                      ~p,                       ~Normal,
+  "AB",   round(sw_AB$statistic, 3), round(sw_AB$p.value, 4), "No",
+  "NB",   round(sw_NB$statistic, 3), round(sw_NB$p.value, 4), "No"
+) %>%
+  kbl(caption = "Shapiro-Wilk normality test results",
+      col.names = c("Group", "W", "p-value", "Normal?")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE) %>%
+  column_spec(4, bold = TRUE, color = "red")
+
+cat("\nConclusion:\n")
+cat("Both conditions violate normality (p < .05).\n")
+cat("Raw accuracy scores cannot be compared with t-tests or linear models.\n")
+cat("Non-parametric alternatives (Mann-Whitney U, Wilcoxon signed-rank) are required.\n")
+```
+
+## QQ plots
+
+```{r qq-plots, fig.width=10, fig.height=5}
+par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
+
+qqnorm(acc_AB, main = "Q-Q Plot — AB condition",
+       pch = 16, col = "#E07B54", cex = 0.9)
+qqline(acc_AB, col = "red", lwd = 2)
+mtext(sprintf("W = %.3f,  p = %.4f", sw_AB$statistic, sw_AB$p.value),
+      side = 3, line = -1.5, cex = 0.85, col = "grey30")
+
+qqnorm(acc_NB, main = "Q-Q Plot — NB condition",
+       pch = 16, col = "#5B8DB8", cex = 0.9)
+qqline(acc_NB, col = "red", lwd = 2)
+mtext(sprintf("W = %.3f,  p = %.4f", sw_NB$statistic, sw_NB$p.value),
+      side = 3, line = -1.5, cex = 0.85, col = "grey30")
+
+par(mfrow = c(1, 1))
+```
+
+Points depart from the diagonal reference line in the upper tail of both distributions,
+confirming ceiling-skew. This departure is consistent with the Shapiro-Wilk rejection of
+normality.
+
+---
+
+# Phase 1 Summary
+
+| Step | Outcome |
+|---|---|
+| Recruitment & exclusions | 184 recruited → **166 retained** (1 corrupt file + 4 vigilance failures) |
+| Data cleaning | Removed encoding-phase rows (no RT recorded) |
+| Demographics | Groups are comparable in age and gender composition |
+| Descriptive accuracy | AB = **83.8%**, NB = **87.0%** |
+| Condition × target type | NB > AB for BB (3.6 pp); NB ≈ AB for EM (2.9 pp) |
+| REC | NB shows higher bias-corrected discrimination than AB |
+| Normality (Shapiro-Wilk) | AB: W = 0.957, *p* = .009; NB: W = 0.942, *p* = .0007 — **both non-normal** |
+| Test decision | Parametric tests invalid → **non-parametric tests required** |
+
+---
+
+# Planned Analyses (Phase 2)
+
+| Research Question | Test | Effect Size |
+|---|---|---|
+| AB vs NB overall accuracy (RQ1) | Mann-Whitney *U* | Rank-biserial *r* |
+| AB vs NB overall RT (RQ1) | Mann-Whitney *U* | Rank-biserial *r* |
+| BB accuracy: NB vs AB (RQ2) | Mann-Whitney *U* | Rank-biserial *r* |
+| EM accuracy: NB vs AB (RQ3) | Mann-Whitney *U* | Rank-biserial *r* |
+| Condition × target-type interaction | Mixed ANOVA | *η²_G* |
+| Confidence–accuracy calibration | Spearman *ρ* | — |
+
+Global significance threshold: **α = .05**. Separate Mann-Whitney tests for RQ2 and RQ3
+will be interpreted alongside the Mixed ANOVA interaction term.
+
+---
+
+# References
+
+Ben-Yakov, A., & Dudai, Y. (2011). Constructing realistic engrams: Poststimulus activity
+of hippocampus and dorsal striatum predicts subsequent episodic memory. *Journal of
+Neuroscience*, *31*(24), 9032–9042.
+
+Boltz, M. G. (1992). Temporal accent structure and the remembering of filmed narratives.
+*Journal of Experimental Psychology: Human Perception and Performance*, *18*(1), 90–105.
+
+R Core Team. (2025). *R: A language and environment for statistical computing*. R
+Foundation for Statistical Computing. https://www.R-project.org/
+
+Radvansky, G. A., & Zacks, J. M. (2017). Event boundaries in memory and cognition.
+*Current Opinion in Behavioral Sciences*, *17*, 133–140.
+
+Swallow, K. M., Zacks, J. M., & Abrams, R. A. (2009). Event boundaries in perception
+affect memory encoding and updating. *Journal of Experimental Psychology: General*,
+*138*(2), 236–257.
+
+Zacks, J. M., Speer, N. K., Swallow, K. M., Braver, T. S., & Reynolds, J. R. (2007).
+Event perception: A mind-brain perspective. *Psychological Bulletin*, *133*(2), 273–293.
