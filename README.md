@@ -1,7 +1,7 @@
 # Movie Memory Experiment
 
 **Team: The Outliers**  
-Behavioral Research: Statistical Methods (BRSM) · IIIT Hyderabad · March 2026
+Behavioral Research: Statistical Methods (BRSM) · IIIT Hyderabad · May 2026
 
 | Member | Roll No. |
 |---|---|
@@ -19,6 +19,8 @@ This repository contains the full analysis pipeline for a recognition memory exp
 - **RQ1** — Does viewing condition (abrupt cut vs. natural boundary) affect overall recognition accuracy and response time?
 - **RQ2** — Is recognition of Before-Boundary (BB) frames lower in the Abrupt-cut group?
 - **RQ3** — Is recognition of Event-Middle (EM) frames similar across conditions (EM is far from the cut point)?
+- **RQ4** — Do confidence ratings positively track recognition accuracy across participants?
+- **RQ5** — Is recognition accuracy higher for EM than BB frames within each condition?
 
 ---
 
@@ -37,25 +39,27 @@ This repository contains the full analysis pipeline for a recognition memory exp
 
 ---
 
-## Analysis Pipeline (`phase1.Rmd`)
+## Analysis Pipeline (`phase2.rmd`)
 
 The R Markdown file runs end-to-end from raw CSVs to all reported statistics and figures:
 
 1. **Data ingestion** — reads all per-subject PsychoPy CSVs, parses subject IDs and condition labels
 2. **Exclusions** — removes corrupt file (`sub42_NB`) and 4 vigilance failures (encoding > 27.05 min)
 3. **RT sanity check** — flags encoding-phase rows (no RT recorded by design)
-4. **Demographic balance checks** — Mann–Whitney *U* (age), chi-square (gender)
-5. **Accuracy analysis** — per-subject means, 2×2 breakdown (Condition × Target Type)
-6. **REC and LDI** — bias-corrected discrimination indices
-7. **RT and confidence** — subject-level means and distributions
-8. **Confidence–accuracy calibration** — monotonic calibration curves
-9. **Correlation matrix** — Pearson *r* across subject-level variables
-10. **Normality testing** — Shapiro–Wilk tests + Q-Q plots → justification for non-parametric tests
-11. **Planned inferential tests** — Mann–Whitney *U*, Mixed ANOVA, Spearman *ρ*
+4. **Demographic balance checks** — Mann–Whitney *U* (age), chi-square/Fisher (categoricals)
+5. **RT outlier removal** — 3-SD rule (115 of 6,640 trials removed; 6,525 retained)
+6. **Accuracy analysis** — per-subject means, 2×2 breakdown (Condition × Target Type)
+7. **REC and LDI** — bias-corrected discrimination indices
+8. **RT and confidence** — subject-level means and distributions
+9. **Confidence–accuracy calibration** — monotonic calibration curves
+10. **Correlation matrix** — Pearson *r* across subject-level variables
+11. **Normality testing** — Shapiro–Wilk tests + Q-Q plots → justification for non-parametric tests
+12. **Inferential tests** — Mann–Whitney *U*, paired Wilcoxon (EM > BB), Spearman *ρ*
+13. **Trial-level GLMM** — Condition × Target Type interaction with crossed random intercepts
 
 ---
 
-## Key Results
+## Key Results (Phase 2)
 
 | Measure | AB | NB | Δ (NB − AB) |
 |---|---|---|---|
@@ -70,6 +74,10 @@ Shapiro–Wilk tests rejected normality for both conditions (AB: *W* = 0.957, *p
 
 ---
 
+## Reports
+
+- **Phase 2 report**: `report2.pdf`
+
 ## Requirements
 
 The following R packages are required:
@@ -80,13 +88,13 @@ install.packages(c("tidyverse", "knitr", "kableExtra", "ggplot2", "ggridges", "g
 
 ### Usage
 
-To run the full analysis, place `phase1.Rmd` in the same directory as the data folder (`BRSM data csv/`) and knit:
+To run the full analysis, place `phase2.rmd` in the same directory as the data folder (`BRSM data csv/`) and knit:
 
 ```r
-rmarkdown::render("phase1.Rmd")
+rmarkdown::render("phase2.rmd")
 ```
 
-This produces an HTML report with all tables, figures, and statistics.
+This produces PDF outputs with all tables, figures, and statistics.
 
 ---
 
